@@ -4,6 +4,7 @@
 *Utility to search for reversals and changes in statistical significance. 
 ********************************************************************************
 
+
 cap program drop rr_utility
 program rr_utility, rclass
 

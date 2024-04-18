@@ -3,6 +3,6 @@ d Materials by Caspar Kaiser
 d Warwick Business School
 d caspar.kaiser@wbs.ac.uk
 
-d 'rr_utility': Test
+d 'rr_utility': Test 2
 
 p rr_utility
