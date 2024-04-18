@@ -1,0 +1,8 @@
+v 0.1
+d Materials by Caspar Kaiser
+d Warwick Business School
+d caspar.kaiser@wbs.ac.uk
+
+d 'rr_utility': Test
+
+p rr_utility
