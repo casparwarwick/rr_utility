@@ -216,7 +216,7 @@ program rr_utility, rclass
 			*-------------------------------------
 			
 			local is_this_gamma = 0 // tells python that it should NOT actually use the value of gamma, and instead set it to zero.
-			python script "`c(sysdir_personal)'/rr_utility/cost_minimizer_gamma.py"			
+			python script "`c(sysdir_plus)'rr_utility/cost_minimizer_gamma.py"			
 		
 			*-------------------------------------
 			*3.5 Get results into the right variables
@@ -387,7 +387,7 @@ program rr_utility, rclass
 			*-------------------------------------
 
 			local is_this_gamma = 1	// tells python that it should actually use the value of gamma		
-			python script "`c(sysdir_personal)'/rr_utility/cost_minimizer_gamma.py"			
+			python script "`c(sysdir_plus)'rr_utility/cost_minimizer_gamma.py"			
 		
 			*-------------------------------------
 			*4.5 Get results into the right variables
