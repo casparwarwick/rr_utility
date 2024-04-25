@@ -17,13 +17,13 @@ program rr_utility, rclass
 	critval(real 0.05) 						/// Specifies the alpha level where we speak of statistical significance. 
 	fast 									/// Runs much faster but does not compute critical values for p-values. 
 	PYthon 				 					/// Specifies that the least non-linear reversal condition is searched for. Requires that Python can be called from within Stata.  
-	scale_min(real 99) scale_max(real 99) 	/// Specifies the minimum and maximum we want the scale to always be on. Not currently fully tested. May act weird. 
+	range(numlist) 				 	/// Specifies the minimum and maximum we want the scale to always be on. Not currently fully tested. May act weird. 
 	GAmma(real 0) 							/// Specifies gamma
 	keep(string) 							/// Specifies list of variables to be kept in the displayed results table(s).
 	transpose 								/// Alternative layout for the results table. Here, rows are variables.
 	dstub(string) 							/// Specifies that the binary dummy should be saved and storted in a stub specified by string. 
 	]		
-	
+		
 	qui {
 	
 	*-------------------------------------
@@ -81,9 +81,16 @@ program rr_utility, rclass
 	local min_depvar = r(min)
 	local max_depvar = r(max)
 	
-	if `scale_min'==99 local scale_min = r(min)
-	if `scale_max'==99 local scale_max = r(max)
-	
+	if "`range'" == "" {
+		local scale_min = `min_depvar'
+		local scale_max =  `max_depvar'		
+	}
+	else {
+		tokenize `range'
+		local scale_min = `1'
+		local scale_max =  `2'
+	}
+		
 	tempvar depvar_rescaled	
 	gen `depvar_rescaled' = (((`depvar'-`min_depvar')/(`max_depvar'-`min_depvar'))*(`scale_max'-`scale_min')) + `scale_min' // division normalises to [0,1], multiplication stretches to the width of the desired scale, addition shifts to the start point of the desired scale.  
 	

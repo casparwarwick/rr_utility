@@ -1,5 +1,5 @@
 {smcl}
-help for {hi:rr_utility} version 0.1 (Date: 18.04.2024). {right: (Caspar Kaiser)}
+help for {hi:rr_utility} version 0.1.1 (Date: 25.04.2024). {right: (Caspar Kaiser & Anthony Lepinteur)}
 {hline}
 {title:Utility to check for coefficient reversals in regressions of ordinal dependent variables}
 
@@ -16,12 +16,10 @@ help for {hi:rr_utility} version 0.1 (Date: 18.04.2024). {right: (Caspar Kaiser)
 {synopt:{opt py:thon}}Finds least non-linear transformation for each coefficient (where possible). Requires that Stata can call Python and that all dependencies are installed. {p_end}
 {synopt:{opt ga:mma}}Specifies a shift by gamma (see below for more details). Causes additional output to be displayed. {p_end}
 {synopt:{opt fast}}Runs much faster but does not compute critical values for p-values. {p_end}
-{synopt:{opt transpose}}Alternative layout for the results table. Here, rows are variables. {p_end}
 {synopt:{cmd:start(}{it:real}{cmd:)}}Specifies the smallest value of c over which should be searched. Default is -2. {p_end}
 {synopt:{cmd:end(}{it:real}{cmd:)}}Specifies the largest value of c over which should be searched. Default is 2. {p_end}
-{synopt:{cmd:prec(}{it:real}{cmd:)}}Specifies the 'density' or 'precision' of the grid of c. For example prec(0.1) says that we evaluate values of c in steps of 0.1. Default is 0.1. {p_end}
-{synopt:{cmd:scale_min(}{it:real}{cmd:)}}Specifies the minimum we want the scale to always be on. Not currently fully tested. May act weird. Must be specified with scale_max(). Default is the min of the original scale. {p_end}
-{synopt:{cmd:scale_max(}{it:real}{cmd:)}}Specifies the maximum we want the scale to always be on. Not currently fully tested. May act weird. Must be specified with scale_min(). Default is the max of the original scale. {p_end}
+{synopt:{cmd:prec:ision(}{it:real}{cmd:)}}Specifies the 'density' or 'precision' of the grid of c. For example prec(0.1) says that we evaluate values of c in steps of 0.1. Default is 0.1. {p_end}
+{synopt:{cmd:range(}{it:{help numlist}}{cmd:)}}Specifies the range we want the scale to be on. Two numbers must be supplied, where the first number is the desired minimum of the scale and the second number is desire maximum of the scale. Reversal cost and c-values are normally unaffected unless the gamma option is used. Default is the range of the original scale {p_end}
 {synopt:{cmd:critval(}{it:real}{cmd:)}}Specifies the alpha level where we speak of statistical significance. Default is 0.05.{p_end}
 
 {syntab:More options {help rr_utility##opt_more:[+]}}
@@ -36,7 +34,7 @@ help for {hi:rr_utility} version 0.1 (Date: 18.04.2024). {right: (Caspar Kaiser)
 {title:Introduction}
 
 {p 4 4}{cmd:rr_utility} is a command to do things. More things to say. {p_end}
-{p 4 4}At minimum, {cmd:rr_utility} requires Stata version XXX. {p_end}
+{p 4 4}At minimum, {cmd:rr_utility} requires Stata version 17.0. {p_end}
 
 {marker description}{...}
 {title:Description}
