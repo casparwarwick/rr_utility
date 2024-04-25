@@ -4,7 +4,6 @@
 *Utility to search for reversals and changes in statistical significance. 
 ********************************************************************************
 
-
 cap program drop rr_utility
 program rr_utility, rclass
 
@@ -14,10 +13,10 @@ program rr_utility, rclass
 
 	syntax, [ 								/// 
 	start(real -2) end(real 2) 				/// Specifies the smallest and largest value of c over which should be searched.
-	prec(real 0.1) 							/// Specifies the 'density' or 'precision' of the grid of c. For example prec(0.1) says that we evaluate values of c in steps of 0.1.
+	PRECision(real 0.1) 					/// Specifies the 'density' or 'precision' of the grid of c. For example precision(0.1) says that we evaluate values of c in steps of 0.1.
 	critval(real 0.05) 						/// Specifies the alpha level where we speak of statistical significance. 
 	fast 									/// Runs much faster but does not compute critical values for p-values. 
-	PYthon 				 						/// Specifies that the least non-linear reversal condition is searched for. Requires that Python can be called from within Stata.  
+	PYthon 				 					/// Specifies that the least non-linear reversal condition is searched for. Requires that Python can be called from within Stata.  
 	scale_min(real 99) scale_max(real 99) 	/// Specifies the minimum and maximum we want the scale to always be on. Not currently fully tested. May act weird. 
 	GAmma(real 0) 							/// Specifies gamma
 	keep(string) 							/// Specifies list of variables to be kept in the displayed results table(s).
@@ -30,7 +29,7 @@ program rr_utility, rclass
 	*-------------------------------------
 	*	1.1 Housekeeping
 	*-------------------------------------
-	
+		
 	*Store the previous model
 	tempname prevmodel
 	estimates store `prevmodel'
@@ -70,9 +69,27 @@ program rr_utility, rclass
 	local P = colsof(e(b))
 	local N = e(N)
 	
+	*If the clusters record their number
+	local ncluster = e(N_clust)
+	
 	*Get the full original command and the dependent variable
 	local full_command  "`e(cmdline)'"
 	local depvar "`e(depvar)'"
+	
+	*Get a rescaled version of the original variable
+	sum `depvar', meanonly
+	local min_depvar = r(min)
+	local max_depvar = r(max)
+	
+	if `scale_min'==99 local scale_min = r(min)
+	if `scale_max'==99 local scale_max = r(max)
+	
+	tempvar depvar_rescaled	
+	gen `depvar_rescaled' = (((`depvar'-`min_depvar')/(`max_depvar'-`min_depvar'))*(`scale_max'-`scale_min')) + `scale_min' // division normalises to [0,1], multiplication stretches to the width of the desired scale, addition shifts to the start point of the desired scale.  
+	
+	*Get the labels into a matrix (needed for the python routine)
+	tempname _labels_depvar_rescaled // can't use a temporary matrix here because python won't recognise it in that case. 
+	levelsof `depvar_rescaled', matrow(_labels_depvar_rescaled)
 	
 	*Get the signs of the original estimates
 	tempname signs_mat signs_mat_pos signs_mat_neg
@@ -130,8 +147,10 @@ program rr_utility, rclass
 		tempname hd_p_vals_tmp
 		tempname hd_covariance
 		matrix `hd_covariance' = vecdiag(e(V))
-		 
-		mata : st_matrix("`hd_p_vals_tmp'", 2*(J(1,`P',1)-t((`N'-`P'), abs(st_matrix("`tmp_mat'") :/ sqrt(st_matrix("`hd_covariance'")))))) // not sure why I put a capture here. 
+		
+		if `ncluster'!=. mata : st_matrix("`hd_p_vals_tmp'", 2*(J(1,`P',1)-t((`ncluster'-1), abs(st_matrix("`tmp_mat'") :/ sqrt(st_matrix("`hd_covariance'")))))) // not sure why I put a capture here. 		 
+		if `ncluster'==. mata : st_matrix("`hd_p_vals_tmp'", 2*(J(1,`P',1)-t((`N'-`P'), abs(st_matrix("`tmp_mat'") :/ sqrt(st_matrix("`hd_covariance'")))))) // not sure why I put a capture here. 
+		
 		if `n'==1 matrix `hd_p_vals'=`hd_p_vals_tmp' 
 		else	  matrix `hd_p_vals' = (`hd_p_vals' \ `hd_p_vals_tmp')				
 	}
@@ -218,7 +237,7 @@ program rr_utility, rclass
 			
 			local is_this_gamma = 0 // tells python that it should NOT actually use the value of gamma, and instead set it to zero.
 			python script "`c(sysdir_plus)'py/cost_minimizer_gamma.py"			
-		
+			
 			*-------------------------------------
 			*3.5 Get results into the right variables
 			*-------------------------------------
@@ -307,7 +326,7 @@ program rr_utility, rclass
 			**If cost is zero anyway, we just set it without any computation
 			*Original coefficient is positive
 			if `orig_b'[1,`n'] > 0 {
-				if `orig_b'[1,`n'] + `gamma' < 0 {
+				if ((`scale_max'-`scale_min')/(`max_depvar'-`min_depvar'))*`orig_b'[1,`n'] + `gamma' < 0 {
 					gen new_labels`n' = .
 					gen cost`n' = 0
 					local ++n
@@ -316,7 +335,7 @@ program rr_utility, rclass
 			}
 			*Original coefficient is negative
 			if `orig_b'[1,`n'] < 0 {
-				if `orig_b'[1,`n'] - `gamma' > 0 {
+				if ((`scale_max'-`scale_min')/(`max_depvar'-`min_depvar'))*`orig_b'[1,`n'] - `gamma' > 0 {
 					gen new_labels`n' = .
 					gen cost`n' = 0
 					local ++n
@@ -333,16 +352,17 @@ program rr_utility, rclass
 			
 			*Case 1: Original b is positive
 			if r(mean)==1 { // Ok, now we know that the original coefficient was (1) positive and (2) irreversible without a gamma shift. Now it's time to do a further check. 
-				if abs((`n_levels_depvar'-1)*`tmp_w_mat_neg_max'[1,`n']) > abs(`gamma')  { 					
+				if abs((`scale_max'-`scale_min')*`tmp_w_mat_neg_max'[1,`n']) > abs(`gamma')  { 					
 					gen new_labels`n' = .
 					gen cost`n' = .
 					local ++n
 					continue
 				}
 			}
+			
 			*Case 2: Original b is negative
 			if r(mean)==0 { // Ok, now we know that the original coefficient was (1) negative and (2) irreversible without a gamma shift. Now it's time to do a further check. 
-				if abs((`n_levels_depvar'-1)*`tmp_w_mat_pos_min'[1,`n']) > abs(`gamma') {  					
+				if abs((`scale_max'-`scale_min')*`tmp_w_mat_pos_min'[1,`n']) > abs(`gamma') {  					
 					gen new_labels`n' = .
 					gen cost`n' = .
 					local ++n
@@ -353,7 +373,7 @@ program rr_utility, rclass
 			**Skip variable if no reversal can be achieved due to a gamma shift that makes reversals harder
 			*Case 1: Original b is positive
 			if `orig_b'[1,`n'] > 0 {
-				if (`n_levels_depvar'-1)*`tmp_w_mat_pos_max'[1,`n'] < `gamma' {
+				if (`scale_max'-`scale_min')*`tmp_w_mat_pos_max'[1,`n'] < `gamma' {
 					gen new_labels`n' = .
 					gen cost`n' = .
 					local ++n
@@ -362,7 +382,7 @@ program rr_utility, rclass
 			}
 			*Case 2: Original b is negative
 			if `orig_b'[1,`n'] < 0 {
-				if (`n_levels_depvar'-1)*`tmp_w_mat_neg_min'[1,`n'] > -`gamma' {
+				if (`scale_max'-`scale_min')*`tmp_w_mat_neg_min'[1,`n'] > -`gamma' {
 					gen new_labels`n' = .
 					gen cost`n' = .
 					local ++n
@@ -389,7 +409,7 @@ program rr_utility, rclass
 
 			local is_this_gamma = 1	// tells python that it should actually use the value of gamma		
 			python script "`c(sysdir_plus)'py/cost_minimizer_gamma.py"			
-		
+			
 			*-------------------------------------
 			*4.5 Get results into the right variables
 			*-------------------------------------
@@ -431,27 +451,13 @@ program rr_utility, rclass
 	*=====================================
 	*5. Loop over levels of c to find reversal conditions
 	*=====================================
-
-	*-------------------------------------
-	*5.0 Get a rescaled version of the original variable
-	*-------------------------------------
 	
-	tempvar depvar_rescaled
-	sum `depvar', meanonly
-	local min_depvar = r(min)
-	local max_depvar = r(max)
-	
-	if `scale_min'==99 local scale_min = r(min)
-	if `scale_max'==99 local scale_max = r(max)
-	
-	gen `depvar_rescaled' = (((`depvar'-`min_depvar')/(`max_depvar'-`min_depvar'))*(`scale_max'-`scale_min')) + `scale_min' // division normalises to [0,1], multiplication stretches to the width of the desired scale, addition shifts to the start point of the desired scale.  
-		
 	*-------------------------------------
 	*5.1 Initialising things 
 	*-------------------------------------
 
 	*Tell the user how many regressions need to be run
-	local N_c = ((`end' - `start')/`prec')+1
+	local N_c = ((`end' - `start')/`precision')+1
 	noisily dis ""
 	noisily dis "Total number of c-values to check: `N_c'. Progress:"
 	
@@ -462,7 +468,7 @@ program rr_utility, rclass
 	*5.2 Begin the loop 
 	*-------------------------------------
 	
-	forvalues c=`start'(`prec')`end'{
+	forvalues c=`start'(`precision')`end'{
 		
 		*-------------------------------------
 		*5.3 Get minus sign before the exp() function for negative c
@@ -472,7 +478,7 @@ program rr_utility, rclass
 		if `c' > 0	local minus ""
 		
 		*=====================================
-		*5. Run the fast routine
+		*6. Run the fast routine
 		*=====================================
 
 		if "`fast'"=="fast" {
@@ -540,7 +546,7 @@ program rr_utility, rclass
 			tempvar trans_depvar_rescaled
 			if (`c' < 0.0000001 & `c' > -0.0000001) gen `trans_depvar_rescaled' = `depvar_rescaled' 
 			else {
-				gen `trans_depvar_rescaled' = ((`minus'exp(`depvar'*`c') - `minus'exp(`min_depvar'*`c')) / (`minus'exp(`max_depvar'*`c') - `minus'exp(`min_depvar'*`c')))*(`scale_max'-`scale_min') + `scale_min'
+				gen double `trans_depvar_rescaled' = ((`minus'exp(`depvar'*`c') - `minus'exp(`min_depvar'*`c')) / (`minus'exp(`max_depvar'*`c') - `minus'exp(`min_depvar'*`c')))*(`scale_max'-`scale_min') + `scale_min'
 			}
 			*Get the command to run
 			local to_run = subinword("`full_command'", "`depvar'", "`trans_depvar_rescaled'", 1) 	// changes the dependent variable of the command originally run.
@@ -562,7 +568,9 @@ program rr_utility, rclass
 
 			*Get p-vals and put into a results-matrix
 			tempname tmp_p
-			capture mata : st_matrix("`tmp_p'", 2*(J(1,`P',1)-t((`N'-`P'), abs(st_matrix("`tmp1'") :/ sqrt(st_matrix("`tmp2'")))))) // not sure why I put a capture here. 
+			
+			if `ncluster'!=. capture mata : st_matrix("`tmp_p'", 2*(J(1,`P',1)-t((`ncluster'-1), abs(st_matrix("`tmp1'") :/ sqrt(st_matrix("`tmp2'")))))) // not sure why I put a capture here.			
+			if `ncluster'==. capture mata : st_matrix("`tmp_p'", 2*(J(1,`P',1)-t((`N'-`P'), abs(st_matrix("`tmp1'") :/ sqrt(st_matrix("`tmp2'")))))) // not sure why I put a capture here. 
 
 			if `c'!=`start' matrix `p_result' = (`p_result' \ `tmp_p')
 			if `c'==`start' matrix `p_result' = (`tmp_p')
@@ -678,7 +686,7 @@ program rr_utility, rclass
 	local n = 1
 	tempname c_vals
 	matrix `c_vals' = J(rowsof(`reversal_mat_gamma'),1,.)
-	forvalues c=`start'(`prec')`end'{
+	forvalues c=`start'(`precision')`end'{
 		capture matrix `c_vals'[`n',1] = `c' // not sure why there's a capture here. 
 		local ++n
 	}
@@ -705,29 +713,32 @@ program rr_utility, rclass
 	
 	
 	*Step 2:
-	preserve
-	clear
-	svmat `reversal_mat_gamma', names(tmp)
-	keep if tmp`c_num' < 0
-	replace tmp`c_num' = abs(tmp`c_num')
-	sort tmp`c_num'
-	forvalues j=1/`c_num2' {
-		sum tmp`c_num' if tmp`j'!=0
-		replace tmp`j' = r(min) 	
+	if `start' < 0 {
+		preserve
+		clear
+		svmat `reversal_mat_gamma', names(tmp)
+		keep if tmp`c_num' < 0
+		replace tmp`c_num' = abs(tmp`c_num')
+		sort tmp`c_num'
+		forvalues j=1/`c_num2' {
+			sum tmp`c_num' if tmp`j'!=0
+			replace tmp`j' = r(min) 	
+		}
+		keep if _n==1
+		tempname min_cb_gamma_value2
+		mkmat tmp1-tmp`c_num2', matrix(`min_cb_gamma_value2')
+		restore
 	}
-	keep if _n==1
-	tempname min_cb_gamma_value2
-	mkmat tmp1-tmp`c_num2', matrix(`min_cb_gamma_value2')
-	restore
-
+	
 	*Step 3:
 	tempname combined
-	matrix `combined' = `min_cb_gamma_value1' \ `min_cb_gamma_value2'
+	if `start' < 0 	matrix `combined' = `min_cb_gamma_value1' \ `min_cb_gamma_value2'
+	else 			matrix `combined' = `min_cb_gamma_value1'
 	preserve 
 	clear
 	svmat `combined', names(tmp)
 	gen sign = 1 in 1
-	replace sign = -1 in 2
+	if `start' < 0 replace sign = -1 in 2
 	
 	forvalues j=1/`c_num2' {
 		sum tmp`j' 
@@ -738,7 +749,7 @@ program rr_utility, rclass
 	}
 	keep if _n==1
 	tempname min_cb_gamma
-	mkmat tmp1-tmp`c_num2', matrix(`min_cb_gamma_value2')
+	mkmat tmp1-tmp`c_num2', matrix(`min_cb_gamma')
 	restore	
 	
 	*-------------------------------------
@@ -811,7 +822,7 @@ program rr_utility, rclass
 	local n = 1
 	tempname c_vals
 	matrix `c_vals' = J(rowsof(`b_result'),1,.)
-	forvalues c=`start'(`prec')`end'{
+	forvalues c=`start'(`precision')`end'{
 		capture matrix `c_vals'[`n',1] = `c' // not sure why there's a capture here. 
 		local ++n
 	}
@@ -924,29 +935,32 @@ program rr_utility, rclass
 		
 		
 		*Step 2:
-		preserve
-		clear
-		svmat `y_result', names(tmp)
-		keep if tmp`c_num' < 0
-		replace tmp`c_num' = abs(tmp`c_num')
-		sort tmp`c_num'
-		forvalues j=1/`c_num2' {
-			sum tmp`c_num' if tmp`j'==1
-			replace tmp`j' = r(min) 	
+		if `start' < 0 {
+			preserve
+			clear
+			svmat `y_result', names(tmp)
+			keep if tmp`c_num' < 0
+			replace tmp`c_num' = abs(tmp`c_num')
+			sort tmp`c_num'
+			forvalues j=1/`c_num2' {
+				sum tmp`c_num' if tmp`j'==1
+				replace tmp`j' = r(min) 	
+			}
+			keep if _n==1
+			tempname min_cp_value2
+			mkmat tmp1-tmp`c_num2', matrix(`min_cp_value2')
+			restore
 		}
-		keep if _n==1
-		tempname min_cp_value2
-		mkmat tmp1-tmp`c_num2', matrix(`min_cp_value2')
-		restore
-
+		
 		*Step 3:
 		tempname combined
-		matrix `combined' = `min_cp_value1' \ `min_cp_value2'
+		if `start' < 0 	matrix `combined' = `min_cp_value1' \ `min_cp_value2'
+		else 			matrix `combined' = `min_cp_value1'
 		preserve 
 		clear
 		svmat `combined', names(tmp)
 		gen sign = 1 in 1
-		replace sign = -1 in 2
+		if `start' < 0 replace sign = -1 in 2
 		
 		forvalues j=1/`c_num2' {
 			sum tmp`j' 
@@ -988,29 +1002,32 @@ program rr_utility, rclass
 		
 		
 		*Step 2:
-		preserve
-		clear
-		svmat `y_result', names(tmp)
-		keep if tmp`c_num' < 0
-		replace tmp`c_num' = abs(tmp`c_num')
-		sort tmp`c_num'
-		forvalues j=1/`c_num2' {
-			sum tmp`c_num' if tmp`j'==-1
-			replace tmp`j' = r(min) 	
+		if `start' < 0 {
+			preserve
+			clear
+			svmat `y_result', names(tmp)
+			keep if tmp`c_num' < 0
+			replace tmp`c_num' = abs(tmp`c_num')
+			sort tmp`c_num'
+			forvalues j=1/`c_num2' {
+				sum tmp`c_num' if tmp`j'==-1
+				replace tmp`j' = r(min) 	
+			}
+			keep if _n==1
+			tempname min_cp2_value2
+			mkmat tmp1-tmp`c_num2', matrix(`min_cp2_value2')
+			restore
 		}
-		keep if _n==1
-		tempname min_cp2_value2
-		mkmat tmp1-tmp`c_num2', matrix(`min_cp2_value2')
-		restore
-
+		
 		*Step 3:
 		tempname combined
-		matrix `combined' = `min_cp2_value1' \ `min_cp2_value2'
+		if `start' < 0 	matrix `combined' = `min_cp2_value1' \ `min_cp2_value2'
+		else			matrix `combined' = `min_cp2_value1' 
 		preserve 
 		clear
 		svmat `combined', names(tmp)
 		gen sign = 1 in 1
-		replace sign = -1 in 2
+		if `start' < 0 replace sign = -1 in 2
 		
 		forvalues j=1/`c_num2' {
 			sum tmp`j' 
@@ -1039,329 +1056,124 @@ program rr_utility, rclass
 	matrix `min_c_value' = `min_c_value'[1...,1..`npcols']
 	*Original coefficients.
 	tempname orig_b_display
-	matrix `orig_b_display' = `orig_b'[1...,1..`npcols'] 
+	matrix `orig_b_display' = `orig_b'[1...,1..`npcols']
+	*Original coefficients if linear transformation is applied (need to recompute them first)
+	if `scale_min'!=`min_depvar' | `scale_max'!=`max_depvar'  {
+		tempname orig_b_linear_trans_display
+		matrix `orig_b_linear_trans_display' =  ((`scale_max'-`scale_min')/(`max_depvar'-`min_depvar'))*`orig_b_display'
+	}
 	*Original p-value (need to recompute them first)
 	tempname orig_ses
 	matrix `orig_ses' = vecdiag(`orig_v')
 	tempname orig_p_display
-	mata : st_matrix("`orig_p_display'", 2*(J(1,`P',1)-t((`N'-`P'), abs(st_matrix("`orig_b'") :/ sqrt(st_matrix("`orig_ses'")))))) // not sure why I put a capture here. 
+	if `ncluster'!=. mata : st_matrix("`orig_p_display'", 2*(J(1,`P',1)-t((`ncluster'-1), abs(st_matrix("`orig_b'") :/ sqrt(st_matrix("`orig_ses'")))))) // not sure why I put a capture here.
+	if `ncluster'==. mata : st_matrix("`orig_p_display'", 2*(J(1,`P',1)-t((`N'-`P'), abs(st_matrix("`orig_b'") :/ sqrt(st_matrix("`orig_ses'")))))) // not sure why I put a capture here.	
 	matrix `orig_p_display' = `orig_p_display'[1...,1..`npcols'] 
 
-	**Assemble the matrix to be displayed
+	*Original coefficient shifted by gamma
+	tempname orig_b_display_gamma
+	matrix `orig_b_display_gamma' = `orig_b' + `gamma_mat'
+	matrix `orig_b_display_gamma' = `orig_b_display_gamma'[1...,1..`npcols'] 
+	matrix colnames `orig_b_display_gamma'=`:colnames `orig_b_display'' 
+
+	*Original coefficients shifted by gamma if linear transformation is applied (need to recompute them first)
+	if `scale_min'!=`min_depvar' | `scale_max'!=`max_depvar'  {
+		tempname orig_b_lin_tra_dis_gamma
+		matrix `orig_b_lin_tra_dis_gamma' =  ((`scale_max'-`scale_min')/(`max_depvar'-`min_depvar'))*`orig_b' + `gamma_mat'
+		matrix `orig_b_lin_tra_dis_gamma' = `orig_b_lin_tra_dis_gamma'[1...,1..`npcols']
+	}
+	
+	
+	*-------------------------------------
+	*13.5 Assemble the matricies to be displayed
+	*-------------------------------------
+	
+	**NOT Gamma
 	tempname _to_display
-	
-	if "`python'" == "python" {
-		if "`fast'"=="" {
-			matrix `_to_display' = `orig_b_display' \ `cost_mat' \ `min_c_value' \ `orig_p_display' \ `max_pval' \ `min_pval' \ `min_cp_value' \ `min_cp2_value'
-			matrix rownames `_to_display' = "1" "2" "3" "4" "5" "6" "7" "8"
-
-		}
-		else {
-			matrix `_to_display' = `orig_b_display' \ `cost_mat' \ `min_c_value' \ `orig_p_display' \ `max_pval' \ `min_pval'	
-			matrix rownames `_to_display' = "1" "2" "3" "4" "5" "6" 		
-		}
-	}
-	else {
-		if "`fast'"=="" {
-			matrix `_to_display' = `orig_b_display' \ `min_c_value' \ `orig_p_display' \ `max_pval' \ `min_pval' \ `min_cp_value' \ `min_cp2_value'
-			matrix rownames `_to_display' = "1" "2" "3" "4" "5" "6" "7" 
-
-		}
-		else {
-			matrix `_to_display' = `orig_b_display' \ `min_c_value' \ `orig_p_display' \ `max_pval' \ `min_pval'	
-			matrix rownames `_to_display' = "1" "2" "3" "4" "5"  		
-		}
-	}
-	**Implement keep list (requires matselrc):
+	matrix `_to_display' = `orig_b_display'
+	if `scale_min'!=`min_depvar' | `scale_max'!=`max_depvar' matrix `_to_display' = `_to_display' \ `orig_b_linear_trans_display'
+	if "`python'"=="python" matrix `_to_display' = `_to_display' \ `cost_mat'
+	matrix `_to_display' = `_to_display' \ `min_c_value' \ `orig_p_display' \ `max_pval' \ `min_pval'
+	if "`fast'"!="fast" matrix `_to_display' = `_to_display' \ `min_cp_value' \ `min_cp2_value' 
 	if "`keep'" != "" matselrc `_to_display' `_to_display', c(`keep') 
-
-	*=====================================
-	*14. Preparare for additional gamma display to user
-	*=====================================
 	
+	**Gamma
 	if `gamma' != 0 {
-		
-		*-------------------------------------
-		*14.0 Original coefficient
-		*-------------------------------------
-
-		tempname orig_b_display_gamma
-		matrix `orig_b_display_gamma' = `orig_b' + `gamma_mat'
-		matrix `orig_b_display_gamma' = `orig_b_display_gamma'[1...,1..`npcols'] 
-
-		*-------------------------------------
-		*14.1 Assemble matrix to be displayed
-		*-------------------------------------
-
 		tempname _to_display_gamma
-		if "`python'" == "python" {
-			matrix `_to_display_gamma' = `orig_b_display_gamma' \ `cost_mat_gamma' \ `min_cb_gamma_value2'
-			matrix colnames `_to_display_gamma'=`explanatory_vars'
-			matrix rownames `_to_display_gamma' = "1" "2" "3"
-		}
-		else {
-			matrix `_to_display_gamma' = `orig_b_display_gamma' \ `min_cb_gamma_value2'
-			matrix colnames `_to_display_gamma'=`explanatory_vars'
-			matrix rownames `_to_display_gamma' = "1" "2" 
-		}		
-		
-		**Implement keep list (requires matselrc):
-		if "`keep'" != "" matselrc `_to_display_gamma' `_to_display_gamma', c(`keep') 
-		
+		matrix `_to_display_gamma' = `orig_b_display_gamma'
+		if `scale_min'!=`min_depvar' | `scale_max'!=`max_depvar' matrix `_to_display_gamma' = `_to_display_gamma' \ `orig_b_lin_tra_dis_gamma'
+		if "`python'"=="python" matrix `_to_display_gamma' = `_to_display_gamma' \ `cost_mat_gamma' 
+		matrix `_to_display_gamma' = `_to_display_gamma' \ `min_cb_gamma'
+	}
+	if "`keep'" != "" matselrc `_to_display_gamma' `_to_display_gamma', c(`keep')
+	
+	*-------------------------------------
+	*13.6 Get the labels and notes
+	*-------------------------------------
+	
+	**NOT Gamma
+	*Labels
+	local display_labels "Orig. coefficient"
+	if `scale_min'!=`min_depvar' | `scale_max'!=`max_depvar' local display_labels "`display_labels'" "Lin. trans. coeff."
+	if "`python'"=="python" local display_labels "`display_labels'" "Minimum cost"
+	local display_labels "`display_labels'" "Minimum c-value" "Original p-value" "Maximum p-value" "Minimum p-value"
+	if "`fast'"!="fast" local display_labels "`display_labels'" "Min. c for insig." "Min. c for sig."
+	*Notes
+	local notes "Missing values imply one of the following: `=char(13)'`=char(10)' (1) That no original coefficient was estimated. `=char(13)'`=char(10)' (2) That no reversal is possible. `=char(13)'`=char(10)' (3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'"
+	if "`fast'"!="fast" local notes `notes' "(4) That coefficients cannot be made significant or insignificant within the search range."
+	
+	**Gamma
+	if `gamma' != 0 {
+		*Labels
+		local display_labels_gamma "Untrans. gamma-shifted coeff."
+		if `scale_min'!=`min_depvar' | `scale_max'!=`max_depvar' local display_labels_gamma "`display_labels_gamma'" "Lin. trans. gamma-shifted coeff."
+		if "`python'"=="python" local display_labels_gamma "`display_labels_gamma'" "Minimum cost"
+		local display_labels_gamma "`display_labels_gamma'" "Minimum c-value"
+		*Notes
+		local notes_gamma "Missing values imply one of the following: `=char(13)'`=char(10)' (1) That no original coefficient was estimated. `=char(13)'`=char(10)' (2) That no reversal is possible. `=char(13)'`=char(10)' (3) That the minimum reversing c-value falls outside the search range."
 	}
 	
 	*=====================================
-	*15. Display to user if python is specified
+	*14. Display to user 
 	*====================================
 	
-	if "`python'" == "python" {
-		*-------------------------------------
-		*15.1 Main display
-		*-------------------------------------
+	noi {
 		
-		if "`fast'"=="" {
-			noi {
-				dis ""
-				dis ""		
-				dis "{bf:Results:}"
-				if "`transpose'" != "" { // sets alternative layout suggested by Anthony
-					esttab matrix(`_to_display', fmt(3) transpose), mtitles("") ///
-					collabels( ///
-					"Original coefficient" ///
-					"Minimum cost" ///
-					"Minimum c-value"  ///
-					"Original p-value" ///
-					"Maximum p-value" ///
-					"Minimum p-value" ///
-					"Min. c-value for insig." ///
-					"Min. c-value for sig." ) ///
-					modelwidth(25) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'" ///
-					"(4) That coefficients cannot be made significant or insignificant within the search range.") 
-				}
-				else { // standard layout
-					esttab matrix(`_to_display', fmt(3)), mtitles("") ///
-					varlabels( ///
-					1 "Original coefficient:" ///
-					2 "Minimum cost:" ///
-					3 "Smallest c-value for reversal:"  ///
-					4 "Original p-value:" ///
-					5 "Maximum p-value:" ///
-					6 "Minimum p-value:" ///
-					7 "Smallest c-value for insig. coeff.:" ///
-					8 "Smallest c-value for sig. coeff.:" ) ///
-					varwidth(35) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'" ///
-					"(4) That coefficients cannot be made significant or insignificant within the search range.") 
-				}
-			}
-		}
-		else {
-			noi {
-				dis ""
-				dis ""		
-				dis "{bf:Results:}"
-				if "`transpose'" != "" { // sets alternative layout suggested by Anthony
-					esttab matrix(`_to_display', fmt(3) transpose), mtitles("") ///
-					collabels( ///
-					"Original coefficient" ///
-					"Minimum cost" ///
-					"Minimum c-value"  ///
-					"Original p-value" ///
-					"Maximum p-value" ///
-					"Minimum p-value") ///
-					modelwidth(25) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'")
-				}
-				else { // standard layout
-					esttab matrix(`_to_display', fmt(3)), mtitles("") ///
-					varlabels( ///
-					1 "Original coefficient:" ///
-					2 "Minimum cost:" ///
-					3 "Smallest c-value for reversal:"  ///
-					4 "Original p-value:" ///
-					5 "Maximum p-value:" ///
-					6 "Minimum p-value:") ///
-					varwidth(35) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'" ///
-					"(4) That coefficients cannot be made significant or insignificant within the search range.") 
-				}
-			}		
-		}
 		*-------------------------------------
-		*15.2 Additional gamma display
+		*14.1 Main display
+		*-------------------------------------
+	
+		dis ""
+		dis ""		
+		dis "{bf:Results:}"
+		esttab matrix(`_to_display', fmt(3) transpose), mtitles("") ///
+		collabels("`display_labels'") ///
+		modelwidth(18) note( `notes') //
+			
+		*-------------------------------------
+		*14.2 Additional gamma display
 		*-------------------------------------
 		
 		if `gamma' != 0 {
-			noi {
-				dis ""
-				dis ""		
-				dis "{bf:Further results after applying shift by gamma:}"
-				if "`transpose'" != "" { // sets alternative layout suggested by Anthony
-					esttab matrix(`_to_display_gamma', fmt(3) transpose), mtitles("") ///
-					collabels( ///
-					"Untrans. gamma-shifted coeff." ///
-					"Minimum cost" ///
-					"Minimum c-value" ///				
-					) ///
-					modelwidth(30) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'")
-				}
-				else { // standard layout
-					esttab matrix(`_to_display_gamma', fmt(3)), mtitles("") ///
-					varlabels( ///
-					1 "Untransformed gamma-shifted coeff.:" ///
-					2 "Minimum cost:" ///				
-					3 "Smallest c-value for reversal:"	///			
-					) ///
-					varwidth(35) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'")
-				}
-			}
+			dis ""
+			dis ""		
+			dis "{bf:Further results after applying shift by gamma:}"
+			esttab matrix(`_to_display_gamma', fmt(3) transpose), mtitles("") ///
+			collabels("`display_labels_gamma'") ///
+			modelwidth(35) note(`notes_gamma') //
 		}	
 	}
 
-	
-	
-	*=====================================
-	*16. Display to user if python is NOT specified
-	*====================================
-	
-	if "`python'" != "python" {
-		*-------------------------------------
-		*16.1 Main display
-		*-------------------------------------
-		
-		if "`fast'"=="" {
-			noi {
-				dis ""
-				dis ""		
-				dis "{bf:Results:}"
-				if "`transpose'" != "" { // sets alternative layout suggested by Anthony
-					esttab matrix(`_to_display', fmt(3) transpose), mtitles("") ///
-					collabels( ///
-					"Original coefficient" ///
-					"Minimum c-value"  ///
-					"Original p-value" ///
-					"Maximum p-value" ///
-					"Minimum p-value" ///
-					"Min. c-value for insig." ///
-					"Min. c-value for sig." ) ///
-					modelwidth(25) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'" ///
-					"(4) That coefficients cannot be made significant or insignificant within the search range.") 
-				}
-				else { // standard layout
-					esttab matrix(`_to_display', fmt(3)), mtitles("") ///
-					varlabels( ///
-					1 "Original coefficient:" ///
-					2 "Smallest c-value for reversal:"  ///
-					3 "Original p-value:" ///
-					4 "Maximum p-value:" ///
-					5 "Minimum p-value:" ///
-					6 "Smallest c-value for insig. coeff.:" ///
-					7 "Smallest c-value for sig. coeff.:" ) ///
-					varwidth(35) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'" ///
-					"(4) That coefficients cannot be made significant or insignificant within the search range.") 
-				}
-			}
-		}
-		else {
-			noi {
-				dis ""
-				dis ""		
-				dis "{bf:Results:}"
-				if "`transpose'" != "" { // sets alternative layout suggested by Anthony
-					esttab matrix(`_to_display', fmt(3) transpose), mtitles("") ///
-					collabels( ///
-					"Original coefficient" ///
-					"Minimum c-value"  ///
-					"Original p-value" ///
-					"Maximum p-value" ///
-					"Minimum p-value") ///
-					modelwidth(25) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'")
-				}
-				else { // standard layout
-					esttab matrix(`_to_display', fmt(3)), mtitles("") ///
-					varlabels( ///
-					1 "Original coefficient:" ///
-					2 "Smallest c-value for reversal:"  ///
-					3 "Original p-value:" ///
-					4 "Maximum p-value:" ///
-					5 "Minimum p-value:") ///
-					varwidth(35) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'" ///
-					"(4) That coefficients cannot be made significant or insignificant within the search range.") 
-				}
-			}		
-		}
-		
-		*-------------------------------------
-		*16.2 Additional gamma display
-		*-------------------------------------
-		
-		if `gamma' != 0 {
-			noi {
-				dis ""
-				dis ""		
-				dis "{bf:Further results after applying shift by gamma:}"
-				if "`transpose'" != "" { // sets alternative layout suggested by Anthony
-					esttab matrix(`_to_display_gamma', fmt(3) transpose), mtitles("") ///
-					collabels( ///
-					"Untrans. gamma-shifted coeff." ///
-					"Minimum c-value" ///				
-					) ///
-					modelwidth(30) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'")
-				}
-				else { // standard layout
-					esttab matrix(`_to_display_gamma', fmt(3)), mtitles("") ///
-					varlabels( ///
-					1 "Untransformed gamma-shifted coeff.:" ///
-					2 "Smallest c-value for reversal:"	///			
-					) ///
-					varwidth(35) note("Missing values imply one of the following: `=char(13)'`=char(10)'" ///
-					"(1) That no original coefficient was estimated. `=char(13)'`=char(10)'" ///
-					"(2) That no reversal is possible. `=char(13)'`=char(10)'" ///
-					"(3) That the minimum reversing c-value falls outside the search range. `=char(13)'`=char(10)'")
-				}
-			}
-		}	
-	}	
 
 	*=====================================
-	*17. Return results in r()
+	*15. Return results in r()
 	*=====================================
 	
 	return matrix result `_to_display'
 	if `gamma' != 0 return matrix resultgamma `_to_display_gamma'
 	return matrix b `b_result' 
 	return matrix r `r_result' 
-	if "`dq'"=="" return matrix rgamma `r_gamma_result' 
+	return matrix rgamma `r_gamma_result' 
 	
 	return matrix d `d_result' 
 	return matrix hdp `hd_p_vals' 
@@ -1377,9 +1189,10 @@ program rr_utility, rclass
 	if "`fast'"=="" return matrix pgamma `p_gamma_result' 
 		
 	*=====================================
-	*18. Restore the original model.
+	*16. Restore the original model.
 	*=====================================
-
+	
+	matrix drop _labels_depvar_rescaled
 	qui estimates restore `prevmodel'
 	
 	}	// ends the qui condition

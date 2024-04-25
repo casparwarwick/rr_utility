@@ -15,44 +15,56 @@ import pandas as pd
 import numpy as np
 from sfi import Data
 from sfi import Macro
+from sfi import Matrix
+
 from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
 
-def cost(l_t):
-	l_o = list(range(1,nlabs+1))  
-	
+def cost(l_t,l_o,nlabels,min,max):
 	#Use squared deviation as cost
-	cost = np.sum((l_t - l_o)**2) / nlabs
+	cost = 1000 * np.sum((l_t - l_o)**2) / ((nlabels*(max-min))**2)
 	
 	#Use absolute deviation as cost
-	#cost = np.sum(abs(l_t - l_o)) / nlabs
+	#cost = np.sum(abs(l_t - l_o)) / nlabels
 	
 	#Use sum of first differences
-	#diff = [0]*(nlabs-2)
-	#for i in range(2,nlabs):
+	#diff = [0]*(nlabels-2)
+	#for i in range(2,nlabels):
 	#	j = i - 1
 	#	k = i - 2
 	#	diff[k] = (l_t[i] - l_t[j])/(l_t[j] - l_t[k])
-	#cost = np.max(diff) / nlabs
+	#cost = np.max(diff) / nlabels
 	
 	#Return cost	
 	return cost 
 
 #-------------------------------------
-#1.2 Import coefficients from Stata and get number of labels
+#1.2 Import coefficients, number of labels, gamma, scale_min and scale_max, and original labels from Stata
 #-------------------------------------
 
+#Coefficients
 bd = Data.get(var=["bd"])
 sign_var = Data.get(var=["sign"])
 sign = sign_var[0]
 
-nlabs = len(bd) # number of labels. to be corrected. 
+#Number of labels
+nlabs = len(bd)  
 
-isgamma = float(Macro.getLocal('is_this_gamma'))
+#Gamma
 gam = - float(Macro.getLocal('gamma'))
-
+isgamma = float(Macro.getLocal('is_this_gamma'))
 if isgamma==0:
 	gam = 0
+
+#scale_min and scale_max
+scale_min = float(Macro.getLocal('scale_min'))
+scale_max = float(Macro.getLocal('scale_max'))
+
+#Original labels
+labels_depvar_rescaled = np.asarray(Matrix.get("_labels_depvar_rescaled"))[0:]
+labels_depvar_rescaled = labels_depvar_rescaled.tolist()
+l_original = [val[0] for val in labels_depvar_rescaled]
+l_transformed = [val[0] for val in labels_depvar_rescaled] # for an initial value
 
 #-------------------------------------
 #1.3 Set constraint that labels are weakly increasing
@@ -94,7 +106,7 @@ else:
 	reversal_constraint = LinearConstraint(reversal_array, [sign*gam], [np.inf])
 	
 #-------------------------------------
-#1.5 Set constraint that labels need to be between 1 and nlabs. 
+#1.5 Set constraint that labels need to be between 1 and the width of the scale, given by "width". 
 #-------------------------------------
 
 tmp1 = [0]*nlabs
@@ -102,21 +114,22 @@ tmp1[0]=1
 tmp2 = [0]*nlabs
 tmp2[nlabs-1]=1
 
-boundary_constraint = LinearConstraint([tmp1,tmp2], [1,nlabs], [1,nlabs])
+boundary_constraint = LinearConstraint([tmp1,tmp2], [scale_min,scale_max], [scale_min,scale_max])
 
 #-------------------------------------
 #1.6 Minimize cost function subject to the constraints
 #-------------------------------------
 
 #Supply initial set of labels
-l_transformed = list(range(1,nlabs+1))
+#To update!
+#l_transformed = list(range(1,nlabs+1))
 
 #Minimize cost function and save result
-result = minimize(cost, l_transformed, method='trust-constr', constraints=[monotonicity_constraint, reversal_constraint, boundary_constraint], options={'verbose': 0})
+result = minimize(cost, l_transformed, args=(l_original,nlabs,scale_min,scale_max), method='trust-constr', constraints=[monotonicity_constraint, reversal_constraint, boundary_constraint], options={'verbose': 0})
 
 #Save cost
-cost = [result.fun]*nlabs			
-
+cost = [result.fun]*nlabs # just puts things into the right format 			
+print(cost)
 
 #-------------------------------------
 #1.7 Output result to Stata
@@ -124,7 +137,6 @@ cost = [result.fun]*nlabs
 
 Data.addVarDouble("python_labels")
 Data.addVarDouble("python_cost")
-
 
 Data.store("python_labels", None, result.x, None)
 Data.store("python_cost", None, cost, None)
