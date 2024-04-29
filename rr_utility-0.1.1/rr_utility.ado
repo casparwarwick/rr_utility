@@ -17,12 +17,11 @@ program rr_utility, rclass
 	critval(real 0.05) 						/// Specifies the alpha level where we speak of statistical significance. 
 	fast 									/// Runs much faster but does not compute critical values for p-values. 
 	PYthon 				 					/// Specifies that the least non-linear reversal condition is searched for. Requires that Python can be called from within Stata.  
-	range(numlist) 				 			/// Specifies the minimum and maximum we want the scale to always be on. 
+	range(numlist) 				 	/// Specifies the minimum and maximum we want the scale to always be on. Not currently fully tested. May act weird. 
 	GAmma(real 0) 							/// Specifies gamma
 	keep(string) 							/// Specifies list of variables to be kept in the displayed results table(s).
 	transpose 								/// Alternative layout for the results table. Here, rows are variables.
 	dstub(string) 							/// Specifies that the binary dummy should be saved and storted in a stub specified by string. 
-	old 									/// Specifies that the old cost function should be used. 
 	]		
 		
 	qui {
@@ -108,9 +107,6 @@ program rr_utility, rclass
 	*Get the gamma mat
 	tempname gamma_mat
 	matrix `gamma_mat' = `gamma' * `signs_mat'
-	
-	if "`old'"=="old" local old = 1
-	else local old = 0
 	
 	*=====================================
 	*2. Assess if reversals are at all possible

@@ -1,5 +1,5 @@
 {smcl}
-help for {hi:rr_utility} version 0.1.2 (Date: 29.04.2024). {right: (Caspar Kaiser & Anthony Lepinteur)}
+help for {hi:rr_utility} version 0.1.1 (Date: 25.04.2024). {right: (Caspar Kaiser & Anthony Lepinteur)}
 {hline}
 {title:Utility to check for coefficient reversals in regressions of ordinal dependent variables}
 
@@ -16,7 +16,6 @@ help for {hi:rr_utility} version 0.1.2 (Date: 29.04.2024). {right: (Caspar Kaise
 {synopt:{opt py:thon}}Finds least non-linear transformation for each coefficient (where possible). Requires that Stata can call Python and that all dependencies are installed. {p_end}
 {synopt:{opt ga:mma}}Specifies a shift by gamma (see below for more details). Causes additional output to be displayed. {p_end}
 {synopt:{opt fast}}Runs much faster but does not compute critical values for p-values. {p_end}
-{synopt:{opt old}}Specifies that the old cost function of squared deviations should be used. {p_end}
 {synopt:{cmd:start(}{it:real}{cmd:)}}Specifies the smallest value of c over which should be searched. Default is -2. {p_end}
 {synopt:{cmd:end(}{it:real}{cmd:)}}Specifies the largest value of c over which should be searched. Default is 2. {p_end}
 {synopt:{cmd:prec:ision(}{it:real}{cmd:)}}Specifies the 'density' or 'precision' of the grid of c. For example prec(0.1) says that we evaluate values of c in steps of 0.1. Default is 0.1. {p_end}

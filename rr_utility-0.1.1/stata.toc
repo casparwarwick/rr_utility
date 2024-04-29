@@ -1,8 +1,8 @@
-v 0.1.2
+v 0.1.1
 d Materials by Caspar Kaiser
 d Warwick Business School
 d caspar.kaiser@wbs.ac.uk
 
-d 'rr_utility': This is version 0.1.2 of rr_utility
+d 'rr_utility': This is version 0.1.1 of rr_utility
 
 p rr_utility
