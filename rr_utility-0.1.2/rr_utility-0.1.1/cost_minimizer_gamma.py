@@ -11,7 +11,6 @@
 import __main__
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
-import warnings
 import pandas as pd
 import numpy as np
 from sfi import Data
@@ -20,37 +19,24 @@ from sfi import Matrix
 
 from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
-from scipy.integrate import quad
 
-
-#-------------------------------------
-#1.1 Define cost function
-#-------------------------------------
-
-#Define integrand for cost function
-def integrand(x,nlabls,l_trans,l_orig):		
-	for i in range(0,nlabls):
-		j = i-1
-		if (x >= l_orig[j]) & (x < l_orig[i]):  
-			y = abs(x - l_trans[j] + ((l_trans[i]-l_trans[j])/(l_orig[i]-l_orig[j]))*(x-l_orig[j]))
-	return y
-
-#Define the actual cost function
-def cost(l_t,l_o,nlabels,min,max,isold):
-	
+def cost(l_t,l_o,nlabels,min,max):
 	#Use squared deviation as cost
-	if isold==1:
-		cost = 1000 * np.sum((l_t - l_o)**2) / ((nlabels*(max-min))**2)
+	cost = 1000 * np.sum((l_t - l_o)**2) / ((nlabels*(max-min))**2)
 	
-	#Use the integral
-	else:
-		with warnings.catch_warnings():
-			warnings.simplefilter("ignore")
-			cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=20)[0]
-		
-	#Return cost
-	return cost
+	#Use absolute deviation as cost
+	#cost = np.sum(abs(l_t - l_o)) / nlabels
 	
+	#Use sum of first differences
+	#diff = [0]*(nlabels-2)
+	#for i in range(2,nlabels):
+	#	j = i - 1
+	#	k = i - 2
+	#	diff[k] = (l_t[i] - l_t[j])/(l_t[j] - l_t[k])
+	#cost = np.max(diff) / nlabels
+	
+	#Return cost	
+	return cost 
 
 #-------------------------------------
 #1.2 Import coefficients, number of labels, gamma, scale_min and scale_max, and original labels from Stata
@@ -74,13 +60,10 @@ if isgamma==0:
 scale_min = float(Macro.getLocal('scale_min'))
 scale_max = float(Macro.getLocal('scale_max'))
 
-#whether the old cost function should be used
-old = float(Macro.getLocal('old'))
-
 #Original labels
 labels_depvar_rescaled = np.asarray(Matrix.get("_labels_depvar_rescaled"))[0:]
 labels_depvar_rescaled = labels_depvar_rescaled.tolist()
-l_original    = [val[0] for val in labels_depvar_rescaled]
+l_original = [val[0] for val in labels_depvar_rescaled]
 l_transformed = [val[0] for val in labels_depvar_rescaled] # for an initial value
 
 #-------------------------------------
@@ -137,11 +120,16 @@ boundary_constraint = LinearConstraint([tmp1,tmp2], [scale_min,scale_max], [scal
 #1.6 Minimize cost function subject to the constraints
 #-------------------------------------
 
+#Supply initial set of labels
+#To update!
+#l_transformed = list(range(1,nlabs+1))
+
 #Minimize cost function and save result
-result = minimize(cost, l_transformed, args=(l_original,nlabs,scale_min,scale_max,old), constraints=[monotonicity_constraint, reversal_constraint, boundary_constraint])
+result = minimize(cost, l_transformed, args=(l_original,nlabs,scale_min,scale_max), method='trust-constr', constraints=[monotonicity_constraint, reversal_constraint, boundary_constraint], options={'verbose': 0})
 
 #Save cost
 cost = [result.fun]*nlabs # just puts things into the right format 			
+print(cost)
 
 #-------------------------------------
 #1.7 Output result to Stata

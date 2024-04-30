@@ -11,7 +11,6 @@
 import __main__
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
-import warnings
 import pandas as pd
 import numpy as np
 from sfi import Data
@@ -22,20 +21,6 @@ from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
 from scipy.integrate import quad
 
-
-#-------------------------------------
-#1.1 Define cost function
-#-------------------------------------
-
-#Define integrand for cost function
-def integrand(x,nlabls,l_trans,l_orig):		
-	for i in range(0,nlabls):
-		j = i-1
-		if (x >= l_orig[j]) & (x < l_orig[i]):  
-			y = abs(x - l_trans[j] + ((l_trans[i]-l_trans[j])/(l_orig[i]-l_orig[j]))*(x-l_orig[j]))
-	return y
-
-#Define the actual cost function
 def cost(l_t,l_o,nlabels,min,max,isold):
 	
 	#Use squared deviation as cost
@@ -44,9 +29,14 @@ def cost(l_t,l_o,nlabels,min,max,isold):
 	
 	#Use the integral
 	else:
-		with warnings.catch_warnings():
-			warnings.simplefilter("ignore")
-			cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=20)[0]
+		def integrand(x,nlabls,l_trans,l_orig):		
+			#y = 0
+			for i in range(0,nlabls):
+				j = i-1
+				if (x >= l_orig[j]) & (x < l_orig[i]):  
+					y = abs(x - l_trans[j] + ((l_trans[i]-l_trans[j])/(l_orig[i]-l_orig[j]))*(x-l_orig[j]))
+			return y
+		cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=100)[0]
 		
 	#Return cost
 	return cost
@@ -136,6 +126,10 @@ boundary_constraint = LinearConstraint([tmp1,tmp2], [scale_min,scale_max], [scal
 #-------------------------------------
 #1.6 Minimize cost function subject to the constraints
 #-------------------------------------
+
+#Supply initial set of labels
+#To update!
+#l_transformed = list(range(1,nlabs+1))
 
 #Minimize cost function and save result
 result = minimize(cost, l_transformed, args=(l_original,nlabs,scale_min,scale_max,old), constraints=[monotonicity_constraint, reversal_constraint, boundary_constraint])
