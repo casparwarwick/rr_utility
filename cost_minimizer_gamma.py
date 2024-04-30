@@ -29,10 +29,10 @@ from scipy.integrate import quad
 
 #Define integrand for cost function
 def integrand(x,nlabls,l_trans,l_orig):		
-	for i in range(0,nlabls):
+	for i in range(1,nlabls):
 		j = i-1
 		if (x >= l_orig[j]) & (x < l_orig[i]):  
-			y = abs(x - l_trans[j] + ((l_trans[i]-l_trans[j])/(l_orig[i]-l_orig[j]))*(x-l_orig[j]))
+			y = abs(l_trans[j] + (l_trans[i]-l_trans[j])/(l_orig[i]-l_orig[j])*(x-l_orig[j]) - x)
 	return y
 
 #Define the actual cost function
@@ -46,7 +46,7 @@ def cost(l_t,l_o,nlabels,min,max,isold,iters):
 	else:
 		with warnings.catch_warnings():
 			warnings.simplefilter("ignore")
-			cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=iters)[0]
+			cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=iters, points=l_o)[0]
 		
 	#Return cost
 	return cost
@@ -85,6 +85,14 @@ labels_depvar_rescaled = np.asarray(Matrix.get("_labels_depvar_rescaled"))[0:]
 labels_depvar_rescaled = labels_depvar_rescaled.tolist()
 l_original    = [val[0] for val in labels_depvar_rescaled]
 l_transformed = [val[0] for val in labels_depvar_rescaled] # for an initial value
+
+#Rescale everything to 1000 -> the integration function otherwise does not work well. 
+factor = 1000/(scale_max - scale_min)
+scale_min = scale_min*factor
+scale_max = scale_max*factor
+gam = gam*factor
+l_original = np.asarray(l_original)*factor
+l_transformed = np.asarray(l_transformed)*factor
 
 #-------------------------------------
 #1.3 Set constraint that labels are weakly increasing
