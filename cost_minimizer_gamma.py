@@ -22,7 +22,6 @@ from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
 from scipy.integrate import quad
 
-
 #-------------------------------------
 #1.1 Define cost function
 #-------------------------------------
