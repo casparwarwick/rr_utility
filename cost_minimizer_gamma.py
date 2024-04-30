@@ -46,7 +46,7 @@ def cost(l_t,l_o,nlabels,min,max,isold,iters):
 	else:
 		with warnings.catch_warnings():
 			warnings.simplefilter("ignore")
-			cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=iters, points=l_o)[0]
+			cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=iters)[0]
 		
 	#Return cost
 	return cost
