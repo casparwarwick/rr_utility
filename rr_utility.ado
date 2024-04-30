@@ -23,6 +23,7 @@ program rr_utility, rclass
 	transpose 								/// Alternative layout for the results table. Here, rows are variables.
 	dstub(string) 							/// Specifies that the binary dummy should be saved and storted in a stub specified by string. 
 	old 									/// Specifies that the old cost function should be used. 
+	niter(real 20)							/// Specifies number of iterations for integration. More is more accurate and slower.
 	]		
 		
 	qui {
@@ -248,7 +249,7 @@ program rr_utility, rclass
 			
 			local is_this_gamma = 0 // tells python that it should NOT actually use the value of gamma, and instead set it to zero.
 			python script "`c(sysdir_plus)'py/cost_minimizer_gamma.py"			
-			*python script "/Users/casparkaiser/Library/CloudStorage/OneDrive-Personal/documents/oxford_phd/reverse_reversal_project/do/do_ck/for_github/rr_utility/cost_minimizer_gamma.py"
+			*noi python script "/Users/casparkaiser/Library/CloudStorage/OneDrive-Personal/documents/oxford_phd/reverse_reversal_project/do/do_ck/for_github/rr_utility/cost_minimizer_gamma.py"
 			
 			*-------------------------------------
 			*3.5 Get results into the right variables

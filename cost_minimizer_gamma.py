@@ -36,7 +36,7 @@ def integrand(x,nlabls,l_trans,l_orig):
 	return y
 
 #Define the actual cost function
-def cost(l_t,l_o,nlabels,min,max,isold):
+def cost(l_t,l_o,nlabels,min,max,isold,iters):
 	
 	#Use squared deviation as cost
 	if isold==1:
@@ -46,7 +46,7 @@ def cost(l_t,l_o,nlabels,min,max,isold):
 	else:
 		with warnings.catch_warnings():
 			warnings.simplefilter("ignore")
-			cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=20)[0]
+			cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=iters)[0]
 		
 	#Return cost
 	return cost
@@ -76,6 +76,9 @@ scale_max = float(Macro.getLocal('scale_max'))
 
 #whether the old cost function should be used
 old = float(Macro.getLocal('old'))
+
+#Number of integration iterations
+niter = int(Macro.getLocal('niter'))
 
 #Original labels
 labels_depvar_rescaled = np.asarray(Matrix.get("_labels_depvar_rescaled"))[0:]
@@ -138,7 +141,7 @@ boundary_constraint = LinearConstraint([tmp1,tmp2], [scale_min,scale_max], [scal
 #-------------------------------------
 
 #Minimize cost function and save result
-result = minimize(cost, l_transformed, args=(l_original,nlabs,scale_min,scale_max,old), constraints=[monotonicity_constraint, reversal_constraint, boundary_constraint])
+result = minimize(cost, l_transformed, args=(l_original,nlabs,scale_min,scale_max,old,niter), constraints=[monotonicity_constraint, reversal_constraint, boundary_constraint])
 
 #Save cost
 cost = [result.fun]*nlabs # just puts things into the right format 			
