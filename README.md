@@ -1,4 +1,4 @@
-_v. 0.1.3_  
+_v. 0.1.4_  
 
 `rr_utility` : rr_utility
 =========================
@@ -6,7 +6,7 @@ _v. 0.1.3_
 Description
 -----------
 
-This is version 0.1.3 of rr_utility
+This is version 0.1.4 of rr_utility
 
 ### License
 MIT

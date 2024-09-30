@@ -1,0 +1,13 @@
+v 0.1.4
+d 'RR_UTILITY': rr_utility
+d 
+d This is version 0.1.4 of rr_utility
+d 
+d Distribution-Date:   20240930
+d License: MIT
+d 
+F rr_utility.ado
+F mrs_utility.ado
+F rr_utility.sthlp
+f cost_minimizer_gamma.py
+f mrs_utility_python.py
