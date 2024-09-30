@@ -22,89 +22,37 @@ from scipy.optimize import minimize
 from scipy.optimize import LinearConstraint
 from scipy.integrate import quad
 
-cost_type=int(Macro.getLocal('cost_type'))
-
 #-------------------------------------
-#1.1 Define cost function (using squared differences)
+#1.1 Define cost function
 #-------------------------------------
 
-if cost_type==1:
-    def cost(l):
-        
-        #-------------------------------------
-        #1.2 Basics
-        #-------------------------------------
-        K = len(l)
-        minl = l[0]
-        maxl = l[K-1]
-        
-        #-------------------------------------
-        #1.3 dl
-        #-------------------------------------
-        dl = [0]*(K-1)
-        for i in range(0,K-1):
-            dl[i] = l[i+1] - l[i]
-        maxdl = maxl - minl
-        N = K - 1
-        maxvar = (1/N - 1/N**2)*maxdl**2
-        Edl = maxdl/N
+#Define integrand for cost function
+def integrand(x,nlabls,l_trans,l_orig):		
+	for i in range(1,nlabls):
+		j = i-1
+		if (x >= l_orig[j]) & (x < l_orig[i]):  
+			y = abs(l_trans[j] + (l_trans[i]-l_trans[j])/(l_orig[i]-l_orig[j])*(x-l_orig[j]) - x)
+	return y
 
-        #-------------------------------------
-        #1.4 Compute each component
-        #-------------------------------------
-        var_comp = [0]*(N)
-        for i in range(0,N):
-            var_comp[i] = (dl[i] - Edl)**2 
-    
-        #-------------------------------------
-        #1.5 Get the variance, normalise, and output
-        #-------------------------------------
-        var = (1/N)*np.sum(var_comp)
-        cost = var/maxvar
-        return cost
-
-#-------------------------------------
-#1.2 Define cost function (using absolute value of differences)
-#-------------------------------------
-
-if cost_type == 2:
-    def cost(l):
-        
-        #-------------------------------------
-        #1.2 Basics
-        #-------------------------------------
-        K = len(l)
-        minl = l[0]
-        maxl = l[K-1]
-        
-        #-------------------------------------
-        #1.3 dl
-        #-------------------------------------
-        dl = [0]*(K-1)
-        for i in range(0,K-1):
-            dl[i] = l[i+1] - l[i]
-        maxdl = maxl - minl
-        N = K - 1
-        maxvar = (1/N - 1/N**2)*maxdl**2
-        Edl = maxdl/N
-
-        #-------------------------------------
-        #1.4 Compute each component
-        #-------------------------------------
-        var_comp = [0]*(N)
-        for i in range(0,N):
-            var_comp[i] = (dl[i] - Edl)**2 
-    
-        #-------------------------------------
-        #1.5 Get the variance, normalise, and output
-        #-------------------------------------
-        var = (1/N)*np.sum(var_comp)
-        cost = (var/maxvar)**0.5
-        return cost
+#Define the actual cost function
+def cost(l_t,l_o,nlabels,min,max,isold,iters):
+	
+	#Use squared deviation as cost
+	if isold==1:
+		cost = 1000 * np.sum((l_t - l_o)**2) / ((nlabels*(max-min))**2)
+	
+	#Use the integral
+	else:
+		with warnings.catch_warnings():
+			warnings.simplefilter("ignore")
+			cost = (2/((max-min)**2))*quad(integrand, min, max, args=(nlabels, l_t,l_o), limit=iters)[0]
+		
+	#Return cost
+	return cost
 	
 
 #-------------------------------------
-#1.6 Import coefficients, number of labels, gamma, scale_min and scale_max, and original labels from Stata
+#1.2 Import coefficients, number of labels, gamma, scale_min and scale_max, and original labels from Stata
 #-------------------------------------
 
 #Coefficients
@@ -125,14 +73,28 @@ if isgamma==0:
 scale_min = float(Macro.getLocal('scale_min'))
 scale_max = float(Macro.getLocal('scale_max'))
 
+#whether the old cost function should be used
+old = float(Macro.getLocal('old'))
+
+#Number of integration iterations
+niter = int(Macro.getLocal('niter'))
+
 #Original labels
 labels_depvar_rescaled = np.asarray(Matrix.get("_labels_depvar_rescaled"))[0:]
 labels_depvar_rescaled = labels_depvar_rescaled.tolist()
 l_original    = [val[0] for val in labels_depvar_rescaled]
 l_transformed = [val[0] for val in labels_depvar_rescaled] # for an initial value
 
+#Rescale everything to 1000 -> the integration function otherwise does not work well. 
+factor = 1000/(scale_max - scale_min)
+scale_min = scale_min*factor
+scale_max = scale_max*factor
+gam = gam*factor
+l_original = np.asarray(l_original)*factor
+l_transformed = np.asarray(l_transformed)*factor
+
 #-------------------------------------
-#1.7 Set constraint that labels are weakly increasing
+#1.3 Set constraint that labels are weakly increasing
 #-------------------------------------
 	
 #Define monotonicity constraints
@@ -152,7 +114,7 @@ monotone_array3 = [0]*nlabs
 monotonicity_constraint = LinearConstraint(monotone_array1, monotone_array2, monotone_array3)
 
 #-------------------------------------
-#1.8 Set constraint that new labels need to lead to a reversal
+#1.4 Set constraint that new labels need to lead to a reversal
 #-------------------------------------
 
 reversal_array = [0]*nlabs
@@ -171,7 +133,7 @@ else:
 	reversal_constraint = LinearConstraint(reversal_array, [sign*gam], [np.inf])
 	
 #-------------------------------------
-#1.9 Set constraint that labels need to be between 1 and the width of the scale, given by "width". 
+#1.5 Set constraint that labels need to be between 1 and the width of the scale, given by "width". 
 #-------------------------------------
 
 tmp1 = [0]*nlabs
@@ -182,17 +144,23 @@ tmp2[nlabs-1]=1
 boundary_constraint = LinearConstraint([tmp1,tmp2], [scale_min,scale_max], [scale_min,scale_max])
 
 #-------------------------------------
-#1.10 Minimize cost function subject to the constraints
+#1.6 Minimize cost function subject to the constraints
 #-------------------------------------
 
+print("This is l_transformed",l_transformed)
+print("This is l_original",l_original)
+print("This is nlabs",nlabs)
+print("This is scale_min",scale_min)
+print("This is scale_max",scale_max)
+print("This is bd", bd)
 #Minimize cost function and save result
-result = minimize(cost, l_transformed, constraints=[monotonicity_constraint, reversal_constraint, boundary_constraint])
+result = minimize(cost, l_transformed, args=(l_original,nlabs,scale_min,scale_max,old,niter), constraints=[monotonicity_constraint, reversal_constraint, boundary_constraint])
 
 #Save cost
 cost = [result.fun]*nlabs # just puts things into the right format 			
 
 #-------------------------------------
-#1.11 Output result to Stata
+#1.7 Output result to Stata
 #-------------------------------------
 
 Data.addVarDouble("python_labels")
@@ -200,3 +168,5 @@ Data.addVarDouble("python_cost")
 
 Data.store("python_labels", None, result.x, None)
 Data.store("python_cost", None, cost, None)
+
+ 
